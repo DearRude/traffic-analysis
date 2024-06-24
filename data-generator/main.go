@@ -26,21 +26,6 @@ type TileName struct {
 	Name string
 }
 
-type Point struct {
-	Lat float64
-	Lon float64
-}
-
-type LineTraffic struct {
-	ID         uint32
-	Length     float64
-	Timestamp  time.Time
-	City       string
-	RoadClass  string
-	Congestion string
-	Geometry   []Point
-}
-
 var (
 	//go:embed cities.geojson
 	geojsonData []byte
@@ -132,6 +117,7 @@ func tileWithinPolygon(tile maptile.Tile, polygon orb.Polygon) bool {
 	return false
 }
 
+// Requests and aggrigate a single tile
 func getTraffic(tn TileName, url string) (*pb.LineTraffics, error) {
 	bytes, err := requestTraffic(tn.Tile.X, tn.Tile.Y, url)
 	if err != nil {
@@ -146,6 +132,7 @@ func getTraffic(tn TileName, url string) (*pb.LineTraffics, error) {
 	return &pb.LineTraffics{Traffics: ters}, nil
 }
 
+// Does an API request to traffic tile provider
 func requestTraffic(x, y uint32, url string) ([]byte, error) {
 	url = fmt.Sprintf(url, ZOOM, x, y)
 
@@ -184,6 +171,7 @@ func requestTraffic(x, y uint32, url string) ([]byte, error) {
 	return body, nil
 }
 
+// Aggrigate each scraped tile to get insight
 func processTile(tile []byte, tn TileName) ([]*pb.LineTraffic, error) {
 	var traffics []*pb.LineTraffic
 	now := time.Now().UTC().Unix()
@@ -224,6 +212,7 @@ func processTile(tile []byte, tn TileName) ([]*pb.LineTraffic, error) {
 	return traffics, nil
 }
 
+// Convert LineString type to an array of protobuf's point
 func convertLineStringToPoints(lineString orb.LineString) []*pb.Point {
 	points := make([]*pb.Point, len(lineString))
 	for i, pt := range lineString {
@@ -231,6 +220,8 @@ func convertLineStringToPoints(lineString orb.LineString) []*pb.Point {
 	}
 	return points
 }
+
+// Generate unique id for each linestring based on their points
 func generateLinestringID(points []orb.Point) uint32 {
 	var normalized string
 	for _, point := range points {
