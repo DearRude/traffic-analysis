@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/paulmach/orb"
@@ -15,6 +14,8 @@ import (
 	"github.com/paulmach/orb/maptile"
 	"github.com/paulmach/orb/planar"
 )
+
+import _ "embed"
 
 type TileName struct {
 	Tile maptile.Tile
@@ -38,13 +39,16 @@ type LineTraffic struct {
 
 var (
 	ZOOM maptile.Zoom
+
+	//go:embed cities.geojson
+	geojsonData []byte
 )
 
 func main() {
 	c := GenConfig()
 	ZOOM = maptile.Zoom(c.Zoom)
 
-	features, err := readGeoJSON("cities.geojson")
+	features, err := readGeoJSON()
 	if err != nil {
 		panic(err)
 	}
@@ -104,13 +108,9 @@ func genTileNames(features []*geojson.Feature) ([]TileName, error) {
 	return tileNames, nil
 }
 
-// ReadGeoJSON reads the GeoJSON data from a file
-func readGeoJSON(filename string) ([]*geojson.Feature, error) {
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, fmt.Errorf("error read from file: %w", err)
-	}
-	fc, err := geojson.UnmarshalFeatureCollection(data)
+// ReadGeoJSON reads the GeoJSON data from a embded binary
+func readGeoJSON() ([]*geojson.Feature, error) {
+	fc, err := geojson.UnmarshalFeatureCollection(geojsonData)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshal geojson file: %w", err)
 	}
