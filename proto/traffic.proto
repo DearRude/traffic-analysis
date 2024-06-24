@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+message Point {
+    double lat = 1;
+    double lon = 2;
+}
+
+message LineTraffic {
+    uint32 id = 1;
+    double length = 2;
+    int64 timestamp = 3;
+    string city = 4;
+    string road_class = 5;
+    string congestion = 6;
+    repeated Point geometry = 7;
+}
+
+message LineTraffics {
+    repeated LineTraffic traffics = 1;
+}

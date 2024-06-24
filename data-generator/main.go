@@ -13,6 +13,10 @@ import (
 	"github.com/paulmach/orb/geojson"
 	"github.com/paulmach/orb/maptile"
 	"github.com/paulmach/orb/planar"
+
+	"google.golang.org/protobuf/proto"
+
+	pb "github.com/DearRude/traffic-analysis/data-generator/protos/traffic" // protobuf
 )
 
 import _ "embed"
@@ -38,10 +42,10 @@ type LineTraffic struct {
 }
 
 var (
-	ZOOM maptile.Zoom
-
 	//go:embed cities.geojson
 	geojsonData []byte
+
+	ZOOM maptile.Zoom
 )
 
 func main() {
@@ -58,27 +62,20 @@ func main() {
 		panic(err)
 	}
 
-	// for _, tileName := range tileNames {
-	// 	err := getTraffic(tileName)
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 	}
-	// }
-	errChan := make(chan error, len(tileNames))
-
-	// Iterate over tileNames and launch a goroutine for each
 	for _, tileName := range tileNames {
-		go func(name TileName) {
-			errChan <- getTraffic(name, c.TileURL)
-		}(tileName)
-	}
+		traffics, err := getTraffic(tileName, c.TileURL)
+		if err != nil {
+			log.Printf("error: %v", err) // Print the error
+			continue
+		}
+		log.Printf("info: %d objects in tile %d %d scraped in %s", len(traffics.Traffics), tileName.Tile.X, tileName.Tile.Y, tileName.Name)
 
-	// Collect errors from the error channel
-	for range tileNames {
-		if err := <-errChan; err != nil {
-			log.Println(err) // Print the error
+		_, err = proto.Marshal(traffics)
+		if err != nil {
+			fmt.Println("error encoding LineTraffics: ", err)
 		}
 	}
+
 }
 
 // Generate all tiles that need to be requested
@@ -135,18 +132,18 @@ func tileWithinPolygon(tile maptile.Tile, polygon orb.Polygon) bool {
 	return false
 }
 
-func getTraffic(tn TileName, url string) error {
+func getTraffic(tn TileName, url string) (*pb.LineTraffics, error) {
 	bytes, err := requestTraffic(tn.Tile.X, tn.Tile.Y, url)
 	if err != nil {
-		return fmt.Errorf("error request traffic data: %w", err)
+		return nil, fmt.Errorf("error request traffic data: %w", err)
 	}
 
-	_, err = processTile(bytes, tn)
+	ters, err := processTile(bytes, tn)
 	if err != nil {
-		return fmt.Errorf("error process tile binary: %w", err)
+		return nil, fmt.Errorf("error process tile binary: %w", err)
 	}
 
-	return nil
+	return &pb.LineTraffics{Traffics: ters}, nil
 }
 
 func requestTraffic(x, y uint32, url string) ([]byte, error) {
@@ -187,9 +184,9 @@ func requestTraffic(x, y uint32, url string) ([]byte, error) {
 	return body, nil
 }
 
-func processTile(tile []byte, tn TileName) ([]LineTraffic, error) {
-	var traffics []LineTraffic
-	now := time.Now().UTC()
+func processTile(tile []byte, tn TileName) ([]*pb.LineTraffic, error) {
+	var traffics []*pb.LineTraffic
+	now := time.Now().UTC().Unix()
 
 	tileData, err := mvt.UnmarshalGzipped(tile)
 	if err != nil {
@@ -202,12 +199,18 @@ func processTile(tile []byte, tn TileName) ([]LineTraffic, error) {
 	for _, feature := range features {
 		linestring, ok := feature.Geometry.(orb.LineString)
 		if !ok {
-			return nil, fmt.Errorf("error unmarshal linestring")
+			multiLineString, ok := feature.Geometry.(orb.MultiLineString)
+			if !ok {
+				return nil, fmt.Errorf("error unmarshal linestring or multilinestring")
+			}
+
+			// Merge the MultiLineString into a single LineString
+			linestring = mergeMultiLineString(multiLineString)
 		}
 		feature.ID = generateLinestringID(linestring)
 
-		traffic := LineTraffic{
-			ID:         generateLinestringID(linestring),
+		traffic := &pb.LineTraffic{
+			Id:         generateLinestringID(linestring),
 			Length:     planar.Length(feature.Geometry),
 			Timestamp:  now,
 			City:       tn.Name,
@@ -221,10 +224,10 @@ func processTile(tile []byte, tn TileName) ([]LineTraffic, error) {
 	return traffics, nil
 }
 
-func convertLineStringToPoints(lineString orb.LineString) []Point {
-	points := make([]Point, len(lineString))
+func convertLineStringToPoints(lineString orb.LineString) []*pb.Point {
+	points := make([]*pb.Point, len(lineString))
 	for i, pt := range lineString {
-		points[i] = Point{Lon: pt[0], Lat: pt[1]}
+		points[i] = &pb.Point{Lon: pt[0], Lat: pt[1]}
 	}
 	return points
 }
@@ -234,4 +237,13 @@ func generateLinestringID(points []orb.Point) uint32 {
 		normalized += fmt.Sprintf("%f,%f;", point.X(), point.Y())
 	}
 	return crc32.ChecksumIEEE([]byte(normalized))
+}
+
+// Helper function to merge a MultiLineString into a single LineString
+func mergeMultiLineString(mls orb.MultiLineString) orb.LineString {
+	var merged orb.LineString
+	for _, line := range mls {
+		merged = append(merged, line...)
+	}
+	return merged
 }
