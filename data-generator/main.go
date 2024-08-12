@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"hash/crc32"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"github.com/paulmach/orb/maptile"
 	"github.com/paulmach/orb/planar"
 
+	"github.com/segmentio/kafka-go"
+	"github.com/sourcegraph/conc/pool"
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/DearRude/traffic-analysis/data-generator/protos/traffic" // protobuf
@@ -47,20 +50,46 @@ func main() {
 		panic(err)
 	}
 
-	for _, tileName := range tileNames {
-		traffics, err := getTraffic(tileName, c.TileURL)
-		if err != nil {
-			log.Printf("error: %v", err) // Print the error
-			continue
-		}
-		log.Printf("info: %d objects in tile %d %d scraped in %s", len(traffics.Traffics), tileName.Tile.X, tileName.Tile.Y, tileName.Name)
-
-		_, err = proto.Marshal(traffics)
-		if err != nil {
-			fmt.Println("error encoding LineTraffics: ", err)
-		}
+	// Set up Kafka producer
+	kafkaWriter := &kafka.Writer{
+		Addr:                   kafka.TCP(c.KafkaServer),
+		Topic:                  "traffic-data",
+		AllowAutoTopicCreation: true,
+		Async:                  true,
 	}
+	defer kafkaWriter.Close()
 
+	// Create an ErrorPool to handle HTTP requests concurrently
+	p := pool.New().WithMaxGoroutines(10) // Adjust the number of concurrent workers
+
+	for _, tileName := range tileNames {
+		tileName := tileName // capture range variable
+		p.Go(func() {
+			traffics, err := getTraffic(tileName, c.TileURL)
+			if err != nil {
+				log.Printf("error: %v", err) // Print the error
+				return
+			}
+			log.Printf("info: %d objects in tile %d %d scraped in %s", len(traffics.Traffics), tileName.Tile.X, tileName.Tile.Y, tileName.Name)
+
+			// Marshal the traffics to protobuf
+			data, err := proto.Marshal(traffics)
+			if err != nil {
+				fmt.Println("error encoding LineTraffics: ", err)
+				return
+			}
+
+			// Produce the marshaled data to Kafka
+			err = kafkaWriter.WriteMessages(context.Background(), kafka.Message{
+				Key:   []byte(fmt.Sprintf("%d-%d", tileName.Tile.X, tileName.Tile.Y)),
+				Value: data,
+			})
+			if err != nil {
+				log.Printf("error writing to Kafka: %v", err)
+				return
+			}
+		})
+	}
 }
 
 // Generate all tiles that need to be requested

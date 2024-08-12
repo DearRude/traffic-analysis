@@ -10,7 +10,8 @@ import (
 
 type Config struct {
 	// Requireds
-	TileURL string
+	TileURL     string
+	KafkaServer string
 
 	// Optionals
 	Zoom uint
@@ -20,8 +21,9 @@ func GenConfig() Config {
 	log.Println("Read configurations.")
 	fs := flag.NewFlagSet("data-generator", flag.ContinueOnError)
 	var (
-		tileURL = fs.String("tileURL", "", "Traffic tile url. e.g. https://example-tile.com/data/v2/%d/%d/%d.pbf")
-		zoom    = fs.Uint("zoom", 14, "zoom level of tile")
+		tileURL     = fs.String("tileURL", "", "Traffic tile url. e.g. https://example-tile.com/data/v2/%d/%d/%d.pbf")
+		kafkaServer = fs.String("kafkaServer", "localhost:9092", "Kafka cluster URL. e.g. localhost:9092")
+		zoom        = fs.Uint("zoom", 14, "zoom level of tile")
 	)
 
 	if _, err := os.Stat(".env"); os.IsNotExist(err) {
@@ -40,7 +42,8 @@ func GenConfig() Config {
 	}
 
 	return Config{
-		TileURL: *tileURL,
-		Zoom:    *zoom,
+		TileURL:     *tileURL,
+		KafkaServer: *kafkaServer,
+		Zoom:        *zoom,
 	}
 }
