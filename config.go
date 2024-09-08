@@ -22,7 +22,7 @@ type Config struct {
 
 func GenConfig() Config {
 	log.Println("Read configurations.")
-	fs := flag.NewFlagSet("data-generator", flag.ContinueOnError)
+	fs := flag.NewFlagSet("traffic-analysis", flag.ContinueOnError)
 	var (
 		tileUrl        = fs.String("tileUrl", "", "Traffic tile url. e.g. https://example-tile.com/data/v2/%d/%d/%d.pbf")
 		postGisParam   = fs.String("postGisParam", "host=localhost user=admin password=trafficramz dbname=postgres port=5433 sslmode=disable TimeZone=UTC", "postgres/postgis url connection")

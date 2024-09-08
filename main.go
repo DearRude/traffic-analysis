@@ -71,6 +71,7 @@ func main() {
 		// sem is a channel that will allow up to 10 concurrent operations.
 		var sem = make(chan int, 10)
 		for _, tileName := range tileNames {
+			tileName := tileName
 			sem <- 1
 			go func() {
 				err := getTraffic(tileName, c.TileURL)
